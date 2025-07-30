@@ -283,8 +283,7 @@ with tab3:
                 # Show the message after rerun
                 if "success_msg" in st.session_state:
                     st.success(st.session_state["success_msg"])
-                    # Optional: clear message after showing once
-                    del st.session_state["success_msg"]
+
                 with col2:
                     if st.button("✏️ Edit question", key=f"edit_{row[0]}"):
                         if "edit_question_id" not in st.session_state or st.session_state["edit_question_id"] != row[0]:
