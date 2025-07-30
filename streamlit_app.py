@@ -55,41 +55,40 @@ def get_grouped_questions():
     c.execute('SELECT * FROM questions WHERE next_review <= ?', (today,))
     due_today = c.fetchall()
 
-    c.execute('SELECT * FROM questions WHERE next_review = ?', (tomorrow,))
-    due_tomorrow = c.fetchall()
+    return due_today
 
-    c.execute('SELECT * FROM questions WHERE next_review > ?', (tomorrow,))
-    future = c.fetchall()
+def get_review_history(question_id):
+    conn = sqlite3.connect("learning.db")
+    c = conn.cursor()
+    c.execute("SELECT review_date FROM reviews WHERE question_id = ? ORDER BY review_date", (question_id,))
+    rows = c.fetchall()
+    conn.close()
+    return [r[0] for r in rows]
 
-    return due_today, due_tomorrow, future
+def update_review(question_id, reviewed):
+    conn = sqlite3.connect("learning.db")
+    c = conn.cursor()
 
-def update_review(id, remembered=True):
-    today = datetime.today().date()
-    c.execute('SELECT interval_days FROM questions WHERE id=?', (id,))
-    interval = c.fetchone()[0]
-    
-    if remembered:
-        new_interval = min(interval * 2, 60)
-    else:
-        new_interval = 3
-    
-    next_review = today + timedelta(days=new_interval)
-    c.execute('UPDATE questions SET last_reviewed=?, next_review=?, interval_days=? WHERE id=?',
-              (today, next_review, new_interval, id))
-    
-    # Log review
-    c.execute('INSERT INTO reviews (question_id, review_date) VALUES (?, ?)', (id, today))
+    if reviewed:
+        now = datetime.now().strftime("%Y-%m-%d")  # store only date
+        c.execute("INSERT INTO reviews (question_id, review_date) VALUES (?, ?)",
+                  (question_id, now))
+
+    c.execute("UPDATE questions SET last_reviewed = ?, next_review = DATE('now', '+' || interval_days || ' days') WHERE id = ?",
+              (datetime.now().strftime("%Y-%m-%d"), question_id))
+
     conn.commit()
+    conn.close()
 
 def get_reviews_per_day():
-    c.execute('SELECT review_date, COUNT(*) FROM reviews GROUP BY review_date')
+    c.execute('SELECT DATE(review_date), COUNT(*) FROM reviews GROUP BY DATE(review_date)')
     data = c.fetchall()
     if not data:
         return pd.DataFrame(columns=['date', 'count'])
     
     df = pd.DataFrame(data, columns=['date', 'count'])
-    df['date'] = pd.to_datetime(df['date'])
-    
+    df['date'] = pd.to_datetime(df['date'], format="%Y-%m-%d") 
+
     # Fill missing days
     date_range = pd.date_range(df['date'].min(), datetime.today())
     df_full = pd.DataFrame(date_range, columns=['date']).merge(df, on='date', how='left').fillna(0)
@@ -113,7 +112,7 @@ tab1, tab2, tab3, tab4 = st.tabs(["🔁 Review", "📊 Dashboard", "📖 All Que
 
 # --- Tab 1: Review ---
 with tab1:
-    due_today, due_tomorrow, future = get_grouped_questions()
+    due_today = get_grouped_questions()
 
     st.subheader(f"To Review Today: {len(due_today)} question{'s' if len(due_today) != 1 else ''}")
 
@@ -158,6 +157,15 @@ with tab1:
             del st.session_state["reviewing"]
             st.session_state["show_answer"] = False
             st.rerun()
+
+        # Show review history
+        review_dates = get_review_history(row[0])
+        st.markdown("---")
+        st.markdown(f"**Reviewed:** {len(review_dates)} time{'s' if len(review_dates) != 1 else ''}")
+        if review_dates:
+            st.markdown("**Review Dates:**")
+            for d in review_dates:
+                st.markdown(f"- {d}")
 
     # If no active review
     elif not due_today:
@@ -232,7 +240,7 @@ with tab2:
                 tickvals=[0, 1, 2, 3, 4, 5, 6],
                 ticktext=["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
                 fixedrange=True,
-                autorange='reversed'  # 🔥 Flip vertical order
+                autorange='reversed'  # Flip vertical order
             ),
             plot_bgcolor='rgba(0,0,0,0)',
             paper_bgcolor='rgba(0,0,0,0)',
@@ -330,7 +338,8 @@ with tab4:
         <b>How it works:</b><br>
         - When you add a question, it will be scheduled for review today.<br>
         - If you mark it as done, it will be shown again after 3 days.<br>
-        - Each time you complete a review, the interval doubles: 3 days, then 6, then 12, and so on.
+        - Each time you complete a review, the interval doubles: 3 days, then 6, then 12, and so on.<br>
+        - If you don't click "Mark as reviewed", the question will continue to appear in the “To Review Today” list, even when the date rolls over to the next day.
         </small><br>
         """,
         unsafe_allow_html=True
