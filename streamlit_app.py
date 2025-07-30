@@ -32,9 +32,11 @@ conn.commit()
 # --- Functions ---
 def add_question(question, answer):
     today = datetime.today().date()
+    server_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     c.execute('INSERT INTO questions (question, answer, last_reviewed, next_review, interval_days) VALUES (?, ?, ?, ?, ?)',
               (question, answer, None, today, 3))
     conn.commit()
+    st.info(f"Server time: {server_time}")
 
 def get_all_questions():
     c.execute('SELECT * FROM questions')
@@ -98,7 +100,8 @@ def get_questions_reviewed_on(date):
 
 # --- Streamlit App ---
 st.title("Spaced Repetition Learning App")
-st.caption(f"Today's Date: {datetime.today().strftime('%A, %d %B %Y')}")
+server_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+st.caption(f"\nServer time: {server_time}")
 
 tab1, tab2, tab3, tab4 = st.tabs(["🔁 Review", "📊 Dashboard", "📖 All Questions", "➕ Add Question"])
 
