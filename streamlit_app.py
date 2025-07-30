@@ -262,8 +262,41 @@ with tab3:
     else:
         for row in all_qs:
             with st.expander(f"{row[1]} (Next Review: {row[4]})"):
-                if st.button("Add to today's review", key=f"all_{row[0]}"):
-                    st.success("Added to today's review. Open tab \"Review\" to start reviewing.")
+                col1, col2, col3 = st.columns([2, 2, 2])
+                with col1:
+                    if st.button("Add to today's review", key=f"all_{row[0]}"):
+                        st.success("Added to today's review. Open tab \"Review\" to start reviewing.")
+                with col2:
+                    if st.button("✏️ Edit question", key=f"edit_{row[0]}"):
+                        if "edit_question_id" not in st.session_state or st.session_state["edit_question_id"] != row[0]:
+                            st.session_state["edit_question_id"] = row[0]
+                            st.session_state["edit_question_text"] = row[1]
+                            st.session_state["edit_answer_text"] = row[2]
+                        st.rerun()
+                with col3:
+                    if st.button("🗑️ Remove question", key=f"remove_{row[0]}"):
+                        c.execute('DELETE FROM questions WHERE id=?', (row[0],))
+                        c.execute('DELETE FROM reviews WHERE question_id=?', (row[0],))
+                        conn.commit()
+                        st.success("Question removed.")
+                        st.rerun()
+
+                # Edit form (show only for the question being edited)
+                if st.session_state.get("edit_question_id") == row[0]:
+                    with st.form(key=f"edit_form_{row[0]}"):
+                        new_q = st.text_area("Edit Question", value=st.session_state.get("edit_question_text", row[1]))
+                        new_a = st.text_area("Edit Answer", value=st.session_state.get("edit_answer_text", row[2]))
+                        submitted = st.form_submit_button("Save Changes")
+                        cancel = st.form_submit_button("Cancel")
+                        if submitted:
+                            c.execute('UPDATE questions SET question=?, answer=? WHERE id=?', (new_q, new_a, row[0]))
+                            conn.commit()
+                            st.success("Question updated.")
+                            del st.session_state["edit_question_id"]
+                            st.rerun()
+                        elif cancel:
+                            del st.session_state["edit_question_id"]
+                            st.rerun()
 
 # --- Tab 4: Add Question ---
 with tab4:
