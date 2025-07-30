@@ -120,9 +120,10 @@ with tab1:
     # If reviewing a question
     if "reviewing" in st.session_state:
         row = st.session_state["reviewing"]
+
         st.markdown("---")
         st.markdown(f"<span style='font-size: 16px;'><b>Question:</b> {row[1]}</span>", unsafe_allow_html=True)
-        user_answer = st.text_area("Your Answer (you can write code here)")
+        user_answer = st.text_area("Your Answer", placeholder="(you can write code here)")
 
         # Initialize answer toggle
         if "show_answer" not in st.session_state:
@@ -151,22 +152,22 @@ with tab1:
             st.session_state["show_answer"] = False
             st.success("Marked as reviewed!")
             st.rerun()
+        
+        # Add "See other questions" as a back button
+        if st.button("<- See other questions", key="back_to_list"):
+            del st.session_state["reviewing"]
+            st.session_state["show_answer"] = False
+            st.rerun()
 
     # If no active review
     elif not due_today:
         st.info("Nothing due today!")
     else:
         for row in due_today:
-            if st.button("Review Now", key=f"today_{row[0]}"):
+            question_label = f"[{row[1].split(']')[0].strip('[')}] - Review Now" if '[' in row[1] and ']' in row[1] else f"{row[1]} - Review Now"
+            if st.button(question_label, key=f"today_{row[0]}"):
                 st.session_state["reviewing"] = row
                 st.rerun()
-
-    st.subheader(f"To Review Tomorrow: {len(due_tomorrow)} question{'s' if len(due_tomorrow) != 1 else ''}")
-    if not due_tomorrow:
-        st.info("No reviews scheduled for tomorrow")
-    else:
-        for row in due_tomorrow:
-            st.write(f"- {row[1]}")
 
 # --- Tab 2: Dashboard ---
 with tab2:
@@ -265,6 +266,11 @@ with tab3:
         st.success("All questions have been reset!")
         st.rerun()
 
+    # Show message only once
+    if "success_msg" in st.session_state:
+        st.success(st.session_state["success_msg"])
+        del st.session_state["success_msg"]  # optional: remove after showing
+
     all_qs = get_all_questions()
     if not all_qs:
         st.info("No questions added yet!")
@@ -277,7 +283,7 @@ with tab3:
                         today = datetime.today().date()
                         c.execute('UPDATE questions SET next_review=? WHERE id=?', (today, row[0]))
                         conn.commit()
-                        st.session_state["success_msg"] = f"Added '{row[1]}' to today's review."
+                        st.session_state["success_msg"] = f"Added '{row[1]}' to today's review.\n\nCheck \"Review\" tab to start reviewing the added question"
                         st.rerun()
 
                 # Show the message after rerun
@@ -318,11 +324,23 @@ with tab3:
 
 # --- Tab 4: Add Question ---
 with tab4:
-    q = st.text_area("Enter Question")
-    a = st.text_area("Enter Answer")
+    st.markdown(
+        """
+        <small>
+        <b>How it works:</b><br>
+        - When you add a question, it will be scheduled for review today.<br>
+        - If you mark it as done, it will be shown again after 3 days.<br>
+        - Each time you complete a review, the interval doubles: 3 days, then 6, then 12, and so on.
+        </small><br>
+        """,
+        unsafe_allow_html=True
+    )
+    st.write("")  # Add space
+    q = st.text_area("Enter Question", placeholder="[TOPIC] Question")
+    a = st.text_area("Enter Answer", placeholder="Paste the answer here")
     if st.button("Add"):
         if q and a:
             add_question(q, a)
-            st.success("Question added!")
+            st.success("Question added! It will appear in today's review and follow the spaced repetition schedule (3, 6, 12 days, etc).")
         else:
             st.warning("Please fill both question and answer.")
