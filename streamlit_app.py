@@ -277,8 +277,14 @@ with tab3:
                         today = datetime.today().date()
                         c.execute('UPDATE questions SET next_review=? WHERE id=?', (today, row[0]))
                         conn.commit()
+                        st.session_state["success_msg"] = f"Added '{row[1]}' to today's review."
                         st.rerun()
-                        st.success("Added to today's review. Open tab \"Review\" to start reviewing.")
+
+                # Show the message after rerun
+                if "success_msg" in st.session_state:
+                    st.success(st.session_state["success_msg"])
+                    # Optional: clear message after showing once
+                    del st.session_state["success_msg"]
                 with col2:
                     if st.button("✏️ Edit question", key=f"edit_{row[0]}"):
                         if "edit_question_id" not in st.session_state or st.session_state["edit_question_id"] != row[0]:
