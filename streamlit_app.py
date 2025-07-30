@@ -277,8 +277,8 @@ with tab3:
                         today = datetime.today().date()
                         c.execute('UPDATE questions SET next_review=? WHERE id=?', (today, row[0]))
                         conn.commit()
-                        st.success("Added to today's review. Open tab \"Review\" to start reviewing.")
                         st.rerun()
+                        st.success("Added to today's review. Open tab \"Review\" to start reviewing.")
                 with col2:
                     if st.button("✏️ Edit question", key=f"edit_{row[0]}"):
                         if "edit_question_id" not in st.session_state or st.session_state["edit_question_id"] != row[0]:
