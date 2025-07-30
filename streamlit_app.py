@@ -37,7 +37,13 @@ def add_question(question, answer):
               (question, answer, None, today, 3))
     conn.commit()
     st.info(f"Server time: {server_time}")
-
+def add_question(question, answer):
+    today = datetime.today().date()
+    server_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    c.execute('INSERT INTO questions (question, answer, last_reviewed, next_review, interval_days) VALUES (?, ?, ?, ?, ?)',
+              (question, answer, None, today, 3))
+    conn.commit()
+    st.info(f"Server time: {server_time}")
 def get_all_questions():
     c.execute('SELECT * FROM questions')
     return c.fetchall()
@@ -268,7 +274,11 @@ with tab3:
                 col1, col2, col3 = st.columns([2, 2, 2])
                 with col1:
                     if st.button("Add to today's review", key=f"all_{row[0]}"):
+                        today = datetime.today().date()
+                        c.execute('UPDATE questions SET next_review=? WHERE id=?', (today, row[0]))
+                        conn.commit()
                         st.success("Added to today's review. Open tab \"Review\" to start reviewing.")
+                        st.rerun()
                 with col2:
                     if st.button("✏️ Edit question", key=f"edit_{row[0]}"):
                         if "edit_question_id" not in st.session_state or st.session_state["edit_question_id"] != row[0]:
