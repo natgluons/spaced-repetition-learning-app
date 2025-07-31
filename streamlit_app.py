@@ -117,10 +117,16 @@ def get_reviews_per_day():
 
     return df_full
 
-
 def get_questions_reviewed_on(date):
-    response = supabase.rpc("get_questions_reviewed_on", {"review_date": date.isoformat()}).execute()
-    return [row["question"] for row in response.data] if response.data else []
+    response = supabase.table("reviews") \
+        .select("question_id, review_date, questions!inner(question)") \
+        .eq("review_date", date.isoformat()) \
+        .execute()
+
+    if not response.data:
+        return []
+
+    return [row["questions"]["question"] for row in response.data]
 
 #############################
 # --- Streamlit App ---
