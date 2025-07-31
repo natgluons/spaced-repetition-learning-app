@@ -90,25 +90,33 @@ def update_review(question_id, reviewed=True):
 
 def get_reviews_per_day():
     response = supabase.table("reviews") \
-        .select("review_date", count="exact") \
+        .select("review_date") \
         .execute()
 
     if not response.data:
         return pd.DataFrame(columns=['date', 'count'])
 
     df = pd.DataFrame(response.data)
+
+    # Ensure proper datetime conversion
     df['review_date'] = pd.to_datetime(df['review_date'])
 
-    # Count per day
+    # Count reviews per day
     daily_counts = df.groupby(df['review_date'].dt.date).size().reset_index(name='count')
+
+    # Convert to datetime for merging
+    daily_counts['review_date'] = pd.to_datetime(daily_counts['review_date'])
 
     # Fill missing days
     date_range = pd.date_range(daily_counts['review_date'].min(), datetime.today())
     df_full = pd.DataFrame(date_range, columns=['date']).merge(
-        daily_counts.rename(columns={'review_date': 'date'}), on='date', how='left'
+        daily_counts.rename(columns={'review_date': 'date'}),
+        on='date',
+        how='left'
     ).fillna(0)
 
     return df_full
+
 
 def get_questions_reviewed_on(date):
     response = supabase.rpc("get_questions_reviewed_on", {"review_date": date.isoformat()}).execute()
