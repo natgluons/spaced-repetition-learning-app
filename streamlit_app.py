@@ -3,17 +3,17 @@ import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from supabase import create_client, Client
-# from dotenv import load_dotenv
-# import os
+from dotenv import load_dotenv
+import os
 
 # --- DB Setup ---
-# if os.environ.get("LOCAL", "0") == "1":
-#     load_dotenv()
-#     url = os.environ.get("SUPABASE_URL")
-#     key = os.environ.get("SUPABASE_KEY")
-# else:
-url = st.secrets["SUPABASE_URL"]
-key = st.secrets["SUPABASE_KEY"]
+if os.environ.get("LOCAL", "0") == "1":
+    load_dotenv()
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_KEY")
+else:
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(url, key)
 
 # --- Functions ---
@@ -133,14 +133,16 @@ with tab1:
         row = st.session_state["reviewing"]
 
         st.markdown("---")
-        st.markdown(f"<span style='font-size: 16px;'><b>Question:</b> {row[1]}</span>", unsafe_allow_html=True)
+        st.markdown(
+            f"<span style='font-size: 16px;'><b>Question:</b> {row['question']}</span>", 
+            unsafe_allow_html=True
+        )
         user_answer = st.text_area("Your Answer", placeholder="(you can write code here)")
 
         # Initialize answer toggle
         if "show_answer" not in st.session_state:
             st.session_state["show_answer"] = False
 
-        # Reveal/Close Answer
         col1, col2 = st.columns([1, 2])
         with col1:
             if not st.session_state["show_answer"]:
@@ -152,13 +154,11 @@ with tab1:
                     st.session_state["show_answer"] = False
                     st.rerun()
 
-        # Display answer if toggled
         if st.session_state["show_answer"]:
-            st.info(f"Correct Answer:\n\n{row[2]}")
+            st.info(f"Correct Answer:\n\n{row['answer']}")
 
-        # Mark as reviewed
         if st.button("✅ Mark as reviewed", key="mark_reviewed"):
-            update_review(row[0], True)
+            update_review(row['id'], True)
             del st.session_state["reviewing"]
             st.session_state["show_answer"] = False
             st.success("Marked as reviewed!")
