@@ -3,17 +3,17 @@ import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from supabase import create_client, Client
-from dotenv import load_dotenv
-import os
+# from dotenv import load_dotenv
+# import os
 
 # --- DB Setup ---
-if os.environ.get("LOCAL", "0") == "1":
-    load_dotenv()
-    url = os.environ.get("SUPABASE_URL")
-    key = os.environ.get("SUPABASE_KEY")
-else:
-    url = st.secrets["SUPABASE_URL"]
-    key = st.secrets["SUPABASE_KEY"]
+# if os.environ.get("LOCAL", "0") == "1":
+#     load_dotenv()
+#     url = os.environ.get("SUPABASE_URL")
+#     key = os.environ.get("SUPABASE_KEY")
+# else:
+url = st.secrets["SUPABASE_URL"]
+key = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(url, key)
 
 # --- Functions ---
