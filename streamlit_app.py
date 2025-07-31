@@ -1,14 +1,19 @@
 import streamlit as st
-import sqlite3
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 from supabase import create_client, Client
+from dotenv import load_dotenv
 import os
 
 # --- DB Setup ---
-url = os.environ.get("SUPABASE_URL")
-key = os.environ.get("SUPABASE_KEY")
+if os.environ.get("LOCAL", "0") == "1":
+    load_dotenv()
+    url = os.environ.get("SUPABASE_URL")
+    key = os.environ.get("SUPABASE_KEY")
+else:
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
 supabase: Client = create_client(url, key)
 
 # --- Functions ---
@@ -84,16 +89,25 @@ def update_review(question_id, reviewed=True):
     }).execute()
 
 def get_reviews_per_day():
-    response = supabase.rpc("get_reviews_per_day").execute()  # optional RPC if created
+    response = supabase.table("reviews") \
+        .select("review_date", count="exact") \
+        .execute()
+
     if not response.data:
         return pd.DataFrame(columns=['date', 'count'])
 
     df = pd.DataFrame(response.data)
-    df['date'] = pd.to_datetime(df['date'])
+    df['review_date'] = pd.to_datetime(df['review_date'])
+
+    # Count per day
+    daily_counts = df.groupby(df['review_date'].dt.date).size().reset_index(name='count')
 
     # Fill missing days
-    date_range = pd.date_range(df['date'].min(), datetime.today())
-    df_full = pd.DataFrame(date_range, columns=['date']).merge(df, on='date', how='left').fillna(0)
+    date_range = pd.date_range(daily_counts['review_date'].min(), datetime.today())
+    df_full = pd.DataFrame(date_range, columns=['date']).merge(
+        daily_counts.rename(columns={'review_date': 'date'}), on='date', how='left'
+    ).fillna(0)
+
     return df_full
 
 def get_questions_reviewed_on(date):
@@ -110,7 +124,7 @@ tab1, tab2, tab3, tab4 = st.tabs(["🔁 Review", "📊 Dashboard", "📖 All Que
 
 # --- Tab 1: Review ---
 with tab1:
-    due_today = get_grouped_questions()
+    due_today, _, _ = get_grouped_questions()
 
     st.subheader(f"To Review Today: {len(due_today)} question{'s' if len(due_today) != 1 else ''}")
 
@@ -170,24 +184,37 @@ with tab1:
         st.info("Nothing due today!")
     else:
         for row in due_today:
-            question_label = f"[{row[1].split(']')[0].strip('[')}] - Review Now" if '[' in row[1] and ']' in row[1] else f"{row[1]} - Review Now"
-            if st.button(question_label, key=f"today_{row[0]}"):
-                st.session_state["reviewing"] = row
-                st.rerun()
+            question_text = row["question"]  # Supabase returns dict
+            if "[" in question_text and "]" in question_text:
+                question_label = f"[{question_text.split(']')[0].strip('[')}] - Review Now"
+            else:
+                question_label = f"{question_text} - Review Now"
 
 # --- Tab 2: Dashboard ---
 with tab2:
-    # Metrics
     today = datetime.today().date()
 
-    c.execute('SELECT COUNT(*) FROM questions')
-    total = c.fetchone()[0]
-    c.execute('SELECT COUNT(*) FROM questions WHERE next_review = ?', (today,))
-    due_today = c.fetchone()[0]
-    c.execute('SELECT COUNT(*) FROM reviews WHERE review_date = ?', (today,))
-    reviewed_today = c.fetchone()[0]
-    c.execute('SELECT COUNT(DISTINCT question_id) FROM reviews')
-    reviewed_total = c.fetchone()[0]
+    # Total questions
+    total_resp = supabase.table("questions").select("id", count="exact").execute()
+    total = total_resp.count if total_resp.count else 0
+
+    # Due today
+    due_today_resp = supabase.table("questions").select("id", count="exact") \
+        .eq("next_review", today.isoformat()).execute()
+    due_today = due_today_resp.count if due_today_resp.count else 0
+
+    # Reviewed today
+    reviewed_today_resp = supabase.table("reviews").select("id", count="exact") \
+        .eq("review_date", today.isoformat()).execute()
+    reviewed_today = reviewed_today_resp.count if reviewed_today_resp.count else 0
+
+    # Total reviewed (distinct questions)
+    response = supabase.table("reviews") \
+        .select("question_id", count="exact") \
+        .execute()
+
+    # Count distinct question_id
+    reviewed_total = len({row["question_id"] for row in response.data})
 
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Total Questions", total)
@@ -265,8 +292,11 @@ with tab3:
     # Reset all button
     if st.button("🔄 Reset All Review Dates"):
         today = datetime.today().date()
-        c.execute('UPDATE questions SET last_reviewed = NULL, next_review = ?, interval_days = 3', (today,))
-        conn.commit()
+        supabase.table("questions").update({
+            "last_reviewed": None,
+            "next_review": today.isoformat(),
+            "interval_days": 3
+        }).neq("id", 0).execute()  # `neq` used to target all rows
         if "reviewing" in st.session_state:
             del st.session_state["reviewing"]
         st.success("All questions have been reset!")
@@ -275,52 +305,62 @@ with tab3:
     # Show message only once
     if "success_msg" in st.session_state:
         st.success(st.session_state["success_msg"])
-        del st.session_state["success_msg"]  # optional: remove after showing
+        del st.session_state["success_msg"]
 
     all_qs = get_all_questions()
     if not all_qs:
         st.info("No questions added yet!")
     else:
         for row in all_qs:
-            with st.expander(f"{row[1]} (Next Review: {row[4]})"):
+            with st.expander(f"{row['question']} (Next Review: {row['next_review']})"):
                 col1, col2, col3 = st.columns([2, 2, 2])
+                
+                # --- Add to today's review ---
                 with col1:
-                    if st.button("Add to today's review", key=f"all_{row[0]}"):
+                    if st.button("Add to today's review", key=f"all_{row['id']}"):
                         today = datetime.today().date()
-                        c.execute('UPDATE questions SET next_review=? WHERE id=?', (today, row[0]))
-                        conn.commit()
-                        st.session_state["success_msg"] = f"Added '{row[1]}' to today's review.\n\nCheck \"Review\" tab to start reviewing the added question"
+                        supabase.table("questions").update({
+                            "next_review": today.isoformat()
+                        }).eq("id", row['id']).execute()
+                        st.session_state["success_msg"] = (
+                            f"Added '{row['question']}' to today's review.\n\n"
+                            "Check \"Review\" tab to start reviewing the added question"
+                        )
                         st.rerun()
 
-                # Show the message after rerun
                 if "success_msg" in st.session_state:
                     st.success(st.session_state["success_msg"])
 
+                # --- Edit question ---
                 with col2:
-                    if st.button("✏️ Edit question", key=f"edit_{row[0]}"):
-                        if "edit_question_id" not in st.session_state or st.session_state["edit_question_id"] != row[0]:
-                            st.session_state["edit_question_id"] = row[0]
-                            st.session_state["edit_question_text"] = row[1]
-                            st.session_state["edit_answer_text"] = row[2]
+                    if st.button("✏️ Edit question", key=f"edit_{row['id']}"):
+                        if ("edit_question_id" not in st.session_state or 
+                            st.session_state["edit_question_id"] != row['id']):
+                            st.session_state["edit_question_id"] = row['id']
+                            st.session_state["edit_question_text"] = row['question']
+                            st.session_state["edit_answer_text"] = row['answer']
                         st.rerun()
+
+                # --- Remove question ---
                 with col3:
-                    if st.button("🗑️ Remove question", key=f"remove_{row[0]}"):
-                        c.execute('DELETE FROM questions WHERE id=?', (row[0],))
-                        c.execute('DELETE FROM reviews WHERE question_id=?', (row[0],))
-                        conn.commit()
+                    if st.button("🗑️ Remove question", key=f"remove_{row['id']}"):
+                        supabase.table("questions").delete().eq("id", row['id']).execute()
+                        supabase.table("reviews").delete().eq("question_id", row['id']).execute()
                         st.success("Question removed.")
                         st.rerun()
 
-                # Edit form (show only for the question being edited)
-                if st.session_state.get("edit_question_id") == row[0]:
-                    with st.form(key=f"edit_form_{row[0]}"):
-                        new_q = st.text_area("Edit Question", value=st.session_state.get("edit_question_text", row[1]))
-                        new_a = st.text_area("Edit Answer", value=st.session_state.get("edit_answer_text", row[2]))
+                # --- Edit form ---
+                if st.session_state.get("edit_question_id") == row['id']:
+                    with st.form(key=f"edit_form_{row['id']}"):
+                        new_q = st.text_area("Edit Question", value=st.session_state.get("edit_question_text", row['question']))
+                        new_a = st.text_area("Edit Answer", value=st.session_state.get("edit_answer_text", row['answer']))
                         submitted = st.form_submit_button("Save Changes")
                         cancel = st.form_submit_button("Cancel")
                         if submitted:
-                            c.execute('UPDATE questions SET question=?, answer=? WHERE id=?', (new_q, new_a, row[0]))
-                            conn.commit()
+                            supabase.table("questions").update({
+                                "question": new_q,
+                                "answer": new_a
+                            }).eq("id", row['id']).execute()
                             st.success("Question updated.")
                             del st.session_state["edit_question_id"]
                             st.rerun()
