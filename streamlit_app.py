@@ -171,7 +171,7 @@ with tab1:
             st.rerun()
 
         # Show review history
-        review_dates = get_review_history(row[0])
+        review_dates = get_review_history(row['id'])
         st.markdown("---")
         st.markdown(f"**Reviewed:** {len(review_dates)} time{'s' if len(review_dates) != 1 else ''}")
         if review_dates:
