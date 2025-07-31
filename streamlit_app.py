@@ -3,91 +3,93 @@ import sqlite3
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
+from supabase import create_client, Client
+import os
 
 # --- DB Setup ---
-conn = sqlite3.connect('learning.db', check_same_thread=False)
-c = conn.cursor()
-
-c.execute('''
-    CREATE TABLE IF NOT EXISTS questions (
-        id INTEGER PRIMARY KEY,
-        question TEXT,
-        answer TEXT,
-        last_reviewed DATE,
-        next_review DATE,
-        interval_days INTEGER
-    )
-''')
-
-c.execute('''
-    CREATE TABLE IF NOT EXISTS reviews (
-        id INTEGER PRIMARY KEY,
-        question_id INTEGER,
-        review_date DATE
-    )
-''')
-
-conn.commit()
+url = os.environ.get("SUPABASE_URL")
+key = os.environ.get("SUPABASE_KEY")
+supabase: Client = create_client(url, key)
 
 # --- Functions ---
 def add_question(question, answer):
     today = datetime.today().date()
-    server_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    c.execute('INSERT INTO questions (question, answer, last_reviewed, next_review, interval_days) VALUES (?, ?, ?, ?, ?)',
-              (question, answer, None, today, 3))
-    conn.commit()
-    st.info(f"Server time: {server_time}")
-def add_question(question, answer):
-    today = datetime.today().date()
-    server_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    c.execute('INSERT INTO questions (question, answer, last_reviewed, next_review, interval_days) VALUES (?, ?, ?, ?, ?)',
-              (question, answer, None, today, 3))
-    conn.commit()
-    st.info(f"Server time: {server_time}")
+    supabase.table("questions").insert({
+        "question": question,
+        "answer": answer,
+        "last_reviewed": None,
+        "next_review": today.isoformat(),
+        "interval_days": 3
+    }).execute()
+
 def get_all_questions():
-    c.execute('SELECT * FROM questions')
-    return c.fetchall()
+    response = supabase.table("questions").select("*").execute()
+    return response.data if response.data else []
 
 def get_grouped_questions():
     today = datetime.today().date()
     tomorrow = today + timedelta(days=1)
 
-    c.execute('SELECT * FROM questions WHERE next_review <= ?', (today,))
-    due_today = c.fetchall()
+    # Due today
+    due_today = supabase.table("questions") \
+        .select("*") \
+        .lte("next_review", today.isoformat()) \
+        .execute().data
 
-    return due_today
+    # Due tomorrow
+    due_tomorrow = supabase.table("questions") \
+        .select("*") \
+        .eq("next_review", tomorrow.isoformat()) \
+        .execute().data
+
+    # Future
+    future = supabase.table("questions") \
+        .select("*") \
+        .gt("next_review", tomorrow.isoformat()) \
+        .execute().data
+
+    return due_today, due_tomorrow, future
 
 def get_review_history(question_id):
-    conn = sqlite3.connect("learning.db")
-    c = conn.cursor()
-    c.execute("SELECT review_date FROM reviews WHERE question_id = ? ORDER BY review_date", (question_id,))
-    rows = c.fetchall()
-    conn.close()
-    return [r[0] for r in rows]
+    response = supabase.table("reviews") \
+        .select("review_date") \
+        .eq("question_id", question_id) \
+        .order("review_date") \
+        .execute()
+    return [row["review_date"] for row in response.data] if response.data else []
 
-def update_review(question_id, reviewed):
-    conn = sqlite3.connect("learning.db")
-    c = conn.cursor()
+def update_review(question_id, reviewed=True):
+    today = datetime.today().date()
 
-    if reviewed:
-        now = datetime.now().strftime("%Y-%m-%d")  # store only date
-        c.execute("INSERT INTO reviews (question_id, review_date) VALUES (?, ?)",
-                  (question_id, now))
+    # Get current interval
+    question = supabase.table("questions").select("interval_days").eq("id", question_id).execute()
+    if not question.data:
+        return
 
-    c.execute("UPDATE questions SET last_reviewed = ?, next_review = DATE('now', '+' || interval_days || ' days') WHERE id = ?",
-              (datetime.now().strftime("%Y-%m-%d"), question_id))
+    interval = question.data[0]["interval_days"]
+    new_interval = min(interval * 2, 60) if reviewed else 3
+    next_review = today + timedelta(days=new_interval)
 
-    conn.commit()
-    conn.close()
+    # Update question
+    supabase.table("questions").update({
+        "last_reviewed": today.isoformat(),
+        "next_review": next_review.isoformat(),
+        "interval_days": new_interval
+    }).eq("id", question_id).execute()
+
+    # Insert into reviews
+    supabase.table("reviews").insert({
+        "question_id": question_id,
+        "review_date": today.isoformat()
+    }).execute()
 
 def get_reviews_per_day():
-    c.execute('SELECT DATE(review_date), COUNT(*) FROM reviews GROUP BY DATE(review_date)')
-    data = c.fetchall()
-    if not data:
+    response = supabase.rpc("get_reviews_per_day").execute()  # optional RPC if created
+    if not response.data:
         return pd.DataFrame(columns=['date', 'count'])
-    
-    df = pd.DataFrame(data, columns=['date', 'count'])
-    df['date'] = pd.to_datetime(df['date'], format="%Y-%m-%d") 
+
+    df = pd.DataFrame(response.data)
+    df['date'] = pd.to_datetime(df['date'])
 
     # Fill missing days
     date_range = pd.date_range(df['date'].min(), datetime.today())
@@ -95,14 +97,10 @@ def get_reviews_per_day():
     return df_full
 
 def get_questions_reviewed_on(date):
-    c.execute('''
-        SELECT q.question 
-        FROM reviews r
-        JOIN questions q ON r.question_id = q.id
-        WHERE r.review_date = ?
-    ''', (date,))
-    return [row[0] for row in c.fetchall()]
+    response = supabase.rpc("get_questions_reviewed_on", {"review_date": date.isoformat()}).execute()
+    return [row["question"] for row in response.data] if response.data else []
 
+#############################
 # --- Streamlit App ---
 st.title("Spaced Repetition Learning App")
 server_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
