@@ -184,11 +184,15 @@ with tab1:
         st.info("Nothing due today!")
     else:
         for row in due_today:
-            question_text = row["question"]  # Supabase returns dict
+            question_text = row["question"]
             if "[" in question_text and "]" in question_text:
                 question_label = f"[{question_text.split(']')[0].strip('[')}] - Review Now"
             else:
                 question_label = f"{question_text} - Review Now"
+
+            if st.button(question_label, key=f"today_{row['id']}"):
+                st.session_state["reviewing"] = row
+                st.rerun()
 
 # --- Tab 2: Dashboard ---
 with tab2:
