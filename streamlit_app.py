@@ -169,7 +169,7 @@ with tab1:
                     st.rerun()
 
         if st.session_state["show_answer"]:
-            st.info(f"Correct Answer:\n\n{row['answer']}")
+            st.text_area("Correct Answer", row['answer'], height=150, disabled=True)
 
         if st.button("✅ Mark as reviewed", key="mark_reviewed"):
             update_review(row['id'], True)
