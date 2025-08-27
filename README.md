@@ -97,3 +97,8 @@ If using local: $env:LOCAL="1" streamlit run streamlit_app.py
 
 * Hosted on **Streamlit Cloud**
 * Uses **Supabase** for data storage
+
+Enjoy! :)
+<img width="995" height="647" alt="spaced-repetition-learning-app" src="https://github.com/user-attachments/assets/47704439-565d-43af-ac5c-a9dd70cfcab3" />
+
+
